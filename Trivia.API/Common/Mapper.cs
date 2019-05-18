@@ -1,5 +1,4 @@
 using System.Linq;
-using Trivia.API.Controllers;
 using Trivia.API.ResourceModels;
 
 namespace Trivia.API.Common
@@ -18,7 +17,7 @@ namespace Trivia.API.Common
         
         public static QuestionResourceModel MapQuestionToResourceModel(Question question)
         {
-            return new QuestionResourceModel {Id = question.Id, Text = question.Text, Answers = question?.Answers.Count() ?? 0};
+            return new QuestionResourceModel {Id = question.Id, Text = question.Text };
         }
     }
 }
