@@ -1,44 +1,23 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
+﻿using System.Collections.Generic;
+using System.Data;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.HttpsPolicy;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
+using MySql.Data.MySqlClient;
+using Trivia.API.Common;
+using Trivia.API.Controllers;
 
 namespace Trivia.API
 {
-    public class TriviaDbContext : DbContext
-    {
-        public TriviaDbContext(DbContextOptions<TriviaDbContext> options) : base(options)
-        {}
-        
-        public DbSet<Question> Questions { get; set; }
-        
-        public DbSet<Answer> Answers { get; set; }
-
-        protected override void OnModelCreating(ModelBuilder builder)
-        {
-            base.OnModelCreating(builder);
-
-            builder.Entity<Question>();
-            builder.Entity<Answer>();
-        }
-    }
-
     public class Question
     {
         public int Id { get; protected set; }
         
         public string Text { get; protected set; }
         
-        public IEnumerable<Answer> Answers { get; protected set; }
+        public IList<Answer> Answers { get; set; }
     }
 
     public class Answer
@@ -47,7 +26,7 @@ namespace Trivia.API
         
         public int Id { get; protected set; }
         
-        public Question Question { get; protected set; }
+        public Question Question { get; set; }
         
         public string Text { get; protected set; }
         
