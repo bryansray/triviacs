@@ -1,8 +1,10 @@
 using System;
+using System.Collections.Generic;
+using System.Data;
 using System.Linq;
 using System.Threading.Tasks;
+using Dapper;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 using Trivia.API.Common;
 using Trivia.API.Common.Web;
 
@@ -12,83 +14,84 @@ namespace Trivia.API.Controllers
     [ApiController]
     public class QuestionsController : ControllerBase
     {
-        private readonly TriviaDbContext _context;
+        private readonly IDbConnection _connection;
+        private readonly IEmbeddedResourceProvider _resourceProvider;
 
-        public QuestionsController(TriviaDbContext context)
+        public QuestionsController(IDbConnection connection, IEmbeddedResourceProvider resourceProvider)
         {
-            _context = context;
+            _connection = connection;
+            _resourceProvider = resourceProvider;
         }
-        
-        // GET v1/questions
+
+        [HttpGet("random")]
+        public async Task<ActionResult> Random()
+        {
+            var total = await _connection.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM questions");
+            var random = new Random();
+            var id = random.Next(1, total);
+            
+            var dictionary = new Dictionary<int, Question>();
+            
+            Question MapResults(Question q, Answer a)
+            {
+                if (!dictionary.TryGetValue(q.Id, out var entry))
+                {
+                    entry = q;
+                    entry.Answers = new List<Answer>();
+                    dictionary.Add(entry.Id, entry);
+                }
+
+                entry.Answers.Add(a);
+                return entry;
+            }
+            
+            var question = (await _connection.QueryAsync<Question, Answer, Question>(
+                "SELECT * FROM questions INNER JOIN answers ON questions.id = answers.question_id WHERE questions.id = @id",
+                MapResults, new {id})).Distinct().SingleOrDefault();
+            
+            return Ok(new SuccessEnvelope(Mapper.MapQuestionToResourceModel(question)));
+        }
+
+        // GET /v1/questions
         [HttpGet]
         public async Task<ActionResult> Get()
         {
             int.TryParse(Request.Query["page"], out var page);
             int.TryParse(Request.Query["pageSize"], out var pageSize);
+
             if (page <= 0) page = 1;
             if (pageSize <= 10 || pageSize > 100) pageSize = 100;
 
-            var total = await _context.Questions.CountAsync();
-            var questions = await _context.Questions.Skip((page - 1) * pageSize).Take(pageSize).Include(x => x.Answers).ToListAsync();
+            var total = await _connection.ExecuteScalarAsync<int>(_resourceProvider.Get("GetQuestionsCount.sql"));
+            var questions = (await _connection.QueryAsync<Question>(_resourceProvider.Get("GetQuestions.sql"), new { Page = (page - 1) * pageSize, PageSize = pageSize})).Distinct();
             var totalPages = (int)Math.Ceiling(total / (decimal)pageSize);
+            var resourceModels = questions.Select(Mapper.MapQuestionToResourceModel);
             
-            return Ok(
-                new PagedSuccessEnvelope(
-                        questions.Select(Mapper.MapQuestionToResourceModel), 
-                        page, 
-                        pageSize, 
-                        total)
-                {Meta = { TotalPages = totalPages } });
+            return Ok(new PagedSuccessEnvelope(resourceModels, page, pageSize, total) { Meta = { TotalPages = totalPages } });
         }
 
-        // GET api/values/5
+        // GET /v1/questions/5
         [HttpGet("{id}")]
-        public async Task<ActionResult> Get(int id)
+        public async Task<ActionResult> Get([FromRoute] int id)
         {
-            var question = await _context.Questions.Include(x => x.Answers).SingleOrDefaultAsync(x => x.Id == id);
-            return Ok(new SuccessEnvelope(Mapper.MapQuestionToResourceModel(question)));
-        }
-
-        // POST api/values
-        [HttpPost]
-        public void Post([FromBody] string value)
-        {
-        }
-
-        // PUT api/values/5
-        [HttpPut("{id}")]
-        public void Put(int id, [FromBody] string value)
-        {
-        }
-
-        // DELETE api/values/5
-        [HttpDelete("{id}")]
-        public void Delete(int id)
-        {
-        }
-    }
-    
-    [Route("v1/[controller]")]
-    [ApiController]
-    public class StatisticsController : ControllerBase
-    {
-        private readonly TriviaDbContext _context;
-
-        public StatisticsController(TriviaDbContext context)
-        {
-            _context = context;
-        }
-        
-        // GET v1/statistics
-        [HttpGet]
-        public async Task<ActionResult> Get()
-        {
-            var totalQuestions = await _context.Questions.CountAsync();
-            var totalAnswers = await _context.Answers.CountAsync();
-            var totalPeopleSurveyed = await _context.Answers.SumAsync(x => x.Count);
+            var dictionary = new Dictionary<int, Question>();
             
-            return Ok(
-                new SuccessEnvelope( new { totalQuestions, totalAnswers, totalPeopleSurveyed }));
+            Question MapResults(Question q, Answer a)
+            {
+                if (!dictionary.TryGetValue(q.Id, out var entry))
+                {
+                    entry = q;
+                    entry.Answers = new List<Answer>();
+                    dictionary.Add(entry.Id, entry);
+                }
+
+                entry.Answers.Add(a);
+                return entry;
+            }
+
+            var sql = _resourceProvider.Get("GetQuestionById.sql");
+            var question = (await _connection.QueryAsync<Question, Answer, Question>(sql, MapResults, new {id})).Distinct().SingleOrDefault();
+            return Ok(new SuccessEnvelope(Mapper.MapQuestionToResourceModel(question)));
         }
     }
 }
